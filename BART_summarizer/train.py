@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import sys
 import logging
 
+
 from fairseq.tasks.translation import TranslationTask
 
-from models.data_utils import DataLoader
+from modules.data_utils import DataLoader
 from modules.trainer import Trainer
+from modules.utils import init_arg_parser
 
 
 logging.basicConfig(
@@ -19,12 +22,12 @@ logging.basicConfig(
 logger = logging.getLogger('fairseq.train')
 
 
-def load_dictionary(path):
+def load_dictionary(path, src_dict_name='source', tgt_dict_name='target'):
     """Load source & target fairseq dictionary.
     """
     # path = self.args.data_name_or_path
-    src_dict = TranslationTask.load_dictionary(os.path.join(path, 'dict.{}.txt'.format('source')))
-    tgt_dict = TranslationTask.load_dictionary(os.path.join(path, 'dict.{}.txt'.format('target')))
+    src_dict = TranslationTask.load_dictionary(os.path.join(path, 'dict.{}.txt'.format(src_dict_name)))
+    tgt_dict = TranslationTask.load_dictionary(os.path.join(path, 'dict.{}.txt'.format(tgt_dict_name)))
 
     assert src_dict.bos() == tgt_dict.bos() == 0
     assert src_dict.pad() == tgt_dict.pad() == 1
@@ -37,17 +40,21 @@ def load_dictionary(path):
 
 
 def main(args):
+    # Print args
+    logger.info(args)
+
     # load dictionary
-    src_dict, tgt_dict = load_dictionary(args.data_name_or_path)
+    src_dict, tgt_dict = load_dictionary(args.data_name_or_path, 
+                                         src_dict_name='document', tgt_dict_name='summary')
     args.src_dict, args.tgt_dict = src_dict, tgt_dict
 
     # build trainer
     trainer = Trainer(args, logger)
 
     # create datasets
-    train = DataLoader(src_dict, source_path, target_path,
+    train = DataLoader(src_dict, args.train_source, args.train_target,
                        max_positions=args.max_positions, no_bos=args.no_bos)
-    dev = DataLoader(src_dict, source_path, target_path,
+    dev = DataLoader(src_dict, args.dev_source, args.dev_target,
                      max_positions=args.max_positions, no_bos=args.no_bos)
 
     # train model

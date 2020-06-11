@@ -6,12 +6,16 @@ import torch
 import torch.nn as nn
 import logging
 
+from tqdm import tqdm
+
 from fairseq.models.bart import BARTModel
 from fairseq.optim.adam import FairseqAdam
 from fairseq.optim.lr_scheduler.polynomial_decay_schedule import PolynomialDecaySchedule
 from fairseq.utils import move_to_cuda
 
-from models.general_utils import Progbar
+from modules.criterion import LabelSmoothedCrossEntropyCriterion
+
+# from models.general_utils import Progbar
 
 
 class Trainer(object):
@@ -25,9 +29,6 @@ class Trainer(object):
         self.optimizer = None
         self.scheduler = None
         self._num_updates = 0
-
-        # Print args
-        self.logger.info(args)
 
         # set cuda device
         self.cuda = torch.cuda.is_available() and not args.cpu
@@ -73,14 +74,15 @@ class Trainer(object):
         """        
         self.criterion = LabelSmoothedCrossEntropyCriterion(self.args.label_smoothing,
                                                             padding_idx=self.src_dict.pad(),
-                                                            reduce=self.args.reduce):
+                                                            reduce=self.args.reduce)
 
     def _build_model(self):
         """Build BART model.
         """
-        self.bart = BARTModel.from_pretrained(args.bart_path,
-                                              checkpoint_file=args.checkpoint_file,
-                                              data_name_or_path=args.data_name_or_path)
+        self.logger.info("- loading BART model from: {}".format(self.args.bart_path))
+        self.bart = BARTModel.from_pretrained(self.args.bart_path,
+                                              checkpoint_file=self.args.checkpoint_file,
+                                              data_name_or_path=self.args.data_name_or_path)
         self.model = self.bart.model
 
     def _build_optimizer(self):
@@ -98,13 +100,21 @@ class Trainer(object):
         self.scheduler = PolynomialDecaySchedule(self.args, self.optimizer)
         self.scheduler.step_update(0)
 
+    def _set_seed(self):
+        # Set seed based on args.seed and the update number so that we get
+        # reproducible results when resuming from checkpoints
+        seed = self.args.seed + self.get_num_updates()
+        torch.manual_seed(seed)
+        if self.cuda:
+            torch.cuda.manual_seed(seed)
+
     def clip_grad_norm(self, clip_norm):
         return self.optimizer.clip_grad_norm(clip_norm, aggregate_norm_fn=None)
 
     def save_model(self):
         """Saves session = weights"""
-        if not os.path.exists(self.args.dir_model):
-            os.makedirs(self.args.dir_model)
+        if not os.path.exists(self.args.save_dir):
+            os.makedirs(self.args.save_dir)
 
         save_path = self.args.dir_model + 'checkpoint.pth.tar'
         torch.save(self.bart.state_dict(), save_path)
@@ -130,11 +140,16 @@ class Trainer(object):
 
         # progbar stuff for logging
         batch_size = self.args.batch_size
-        nbatches = (len(train) + batch_size - 1) // batch_size
-        prog = Progbar(target=nbatches)
+
+        progress_bar = tqdm(train.batch_iter(batch_size))
+        # nbatches = (len(train) + batch_size - 1) // batch_size
+        # prog = Progbar(target=nbatches)
+
+        # could do this inside the loop
+        self._set_seed()
 
         logging_outputs = []
-        for i, batch in enumerate(train.batch_iter(batch_size)):
+        for batch in progress_bar:
             batch = move_to_cuda(batch)
             target = batch["target"].view(-1, 1)
 
@@ -146,7 +161,19 @@ class Trainer(object):
 
             # calculate loss & gradient
             loss, nll_loss = self.criterion(lprobs, target)
+
+            # calculate & clip grads
             self.optimizer.backward(loss)
+            self.clip_grad_norm(self.args.clip_norm)
+
+            num_update = self.get_num_updates()
+            if (num_update + 1) % self.args.update_freq == 0:
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+
+            # emptying the CUDA cache after the first step can reduce the chance of OOM
+            if self.cuda and num_update == 0:
+                torch.cuda.empty_cache()
 
             logging_output = {
                 'loss': loss.data,
@@ -157,23 +184,17 @@ class Trainer(object):
             logging_outputs += [logging_output]
             del loss
 
-            # emptying the CUDA cache after the first step can
-            # reduce the chance of OOM
-            if self.cuda and self.get_num_updates() == 0:
-                torch.cuda.empty_cache()
+            self.set_num_updates(num_update + 1)
 
-            # clip grads
-            grad_norm = self.clip_grad_norm(self.args.clip_norm)
-
-            self.optimizer.step()
-            self.optimizer.zero_grad()
-
-            self.set_num_updates(self.get_num_updates() + 1)
-
-            prog.update(i + 1,
-                        values=[("token_loss", logging_output['loss'] / logging_output['ntokens'])],
-                        exact=[("lr", self.get_lr()), 
-                               ("num_updates", self.get_num_updates())])
+            progress_bar.set_description("token_loss: {:.4f}; lr: {:.4f}; num_update: {}".format(
+                logging_output['loss'] / logging_output['ntokens'],
+                self.get_lr(),
+                self.get_num_updates()
+            ))
+            # prog.update(i + 1,
+            #             values=[("token_loss", logging_output['loss'] / logging_output['ntokens'])],
+            #             exact=[("lr", self.get_lr()), 
+            #                    ("num_updates", self.get_num_updates())])
 
         return logging_outputs
 
@@ -183,10 +204,11 @@ class Trainer(object):
 
         best_score, nepoch_no_imprv = 0, 0  # for early stopping
         for epoch in range(self.args.max_epoch):
-            self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.args.nepochs))
+            self.logger.info("Epoch {:} out of {:}".format(epoch + 1, self.args.max_epoch))
 
             train.shuffle()
             logging_outputs = self.run_epoch(train, epoch)
+            del logging_outputs
 
             # evaluate the model
             self.logger.info('- evaluate on development set...')
