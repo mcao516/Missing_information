@@ -14,8 +14,8 @@ from fairseq.optim.lr_scheduler.polynomial_decay_schedule import PolynomialDecay
 from fairseq.utils import move_to_cuda
 
 from modules.criterion import LabelSmoothedCrossEntropyCriterion
-
-# from models.general_utils import Progbar
+from modules.utils import Progbar
+from modules.model import BARTWrapper
 
 
 class Trainer(object):
@@ -28,6 +28,7 @@ class Trainer(object):
 
         self.optimizer = None
         self.scheduler = None
+        self.criterion = None
         self._num_updates = 0
 
         # set cuda device
@@ -47,6 +48,12 @@ class Trainer(object):
         # Load BART model
         self._build_model()
         self.model = self.model.to(device=self.device)
+
+        if torch.cuda.device_count() > 1 and args.multi_gpu:
+            self.logger.info("- Let's use {} GPUs !".format(torch.cuda.device_count()))
+            self.model = nn.DataParallel(self.model)
+        else:
+            self.logger.info("- Train the model on single GPU :/")
 
         self._build_optimizer()
         self._build_scheduler()
@@ -71,19 +78,21 @@ class Trainer(object):
 
     def _build_criterion(self):
         """Build criterion.
-        """        
+        """
         self.criterion = LabelSmoothedCrossEntropyCriterion(self.args.label_smoothing,
                                                             padding_idx=self.src_dict.pad(),
                                                             reduce=self.args.reduce)
 
     def _build_model(self):
-        """Build BART model.
-        """
+        """Build BART model."""
+        if self.criterion is None:
+            self._build_criterion()
+
         self.logger.info("- loading BART model from: {}".format(self.args.bart_path))
         self.bart = BARTModel.from_pretrained(self.args.bart_path,
                                               checkpoint_file=self.args.checkpoint_file,
                                               data_name_or_path=self.args.data_name_or_path)
-        self.model = self.bart.model
+        self.model = BARTWrapper(self.bart.model, self.criterion)
 
     def _build_optimizer(self):
         params = list(
@@ -116,15 +125,15 @@ class Trainer(object):
         if not os.path.exists(self.args.save_dir):
             os.makedirs(self.args.save_dir)
 
-        save_path = self.args.dir_model + 'checkpoint.pth.tar'
+        save_path = os.path.join(self.args.save_dir, 'checkpoint.pth.tar')
         torch.save(self.bart.state_dict(), save_path)
         self.logger.info("- model saved at: {}".format(save_path))
 
     def restore_model(self, model_path):
         """Load pre-trained model.
         """
-        self.bart.load_state_dict(torch.load(model_path))
-        self.model = self.bart.model
+        # self.bart.load_state_dict(torch.load(model_path))
+        # self.model = self.bart.model
         self.logger.info("- model restored from: {}".format(model_path))
 
     def run_epoch(self, train, epoch):
@@ -137,43 +146,39 @@ class Trainer(object):
         """
         self.model.train()
         self.criterion.train()
+        self.optimizer.zero_grad()
 
         # progbar stuff for logging
         batch_size = self.args.batch_size
 
-        progress_bar = tqdm(train.batch_iter(batch_size))
-        # nbatches = (len(train) + batch_size - 1) // batch_size
-        # prog = Progbar(target=nbatches)
+        # progress_bar = tqdm(train.batch_iter(batch_size))
+        nbatches = (len(train) + batch_size - 1) // batch_size
+        prog = Progbar(target=nbatches)
 
         # could do this inside the loop
         self._set_seed()
 
         logging_outputs = []
-        for batch in progress_bar:
+        for i, batch in enumerate(train.batch_iter(batch_size)):
             batch = move_to_cuda(batch)
-            target = batch["target"].view(-1, 1)
 
-            net_output = self.model(**batch['net_input'])
+            loss, nll_loss = self.model(batch["target"], **batch['net_input'])
+            loss = loss.mean()  # average losses over all GPUs
 
-            # [batch_size, max_tgt_len, vocab] => [batch_size * max_tgt_len, vocab]
-            lprobs = self.model.get_normalized_probs(net_output, log_probs=True)
-            lprobs = lprobs.view(-1, lprobs.size(-1))
-
-            # calculate loss & gradient
-            loss, nll_loss = self.criterion(lprobs, target)
-
-            # calculate & clip grads
             self.optimizer.backward(loss)
-            self.clip_grad_norm(self.args.clip_norm)
 
-            num_update = self.get_num_updates()
-            if (num_update + 1) % self.args.update_freq == 0:
+            if (i + 1) % self.args.update_freq == 0 or (i + 1) == nbatches:
+                # clip accumulated gradients (this should be put inside?)
+                self.clip_grad_norm(self.args.clip_norm)
+
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            # emptying the CUDA cache after the first step can reduce the chance of OOM
-            if self.cuda and num_update == 0:
-                torch.cuda.empty_cache()
+                # emptying the CUDA cache after the first step can reduce the chance of OOM
+                if self.cuda and self.get_num_updates() == 0:
+                    torch.cuda.empty_cache()
+
+                self.set_num_updates(self.get_num_updates() + 1)
 
             logging_output = {
                 'loss': loss.data,
@@ -184,17 +189,15 @@ class Trainer(object):
             logging_outputs += [logging_output]
             del loss
 
-            self.set_num_updates(num_update + 1)
+            prog.update(i + 1,
+                        values=[("token_loss", logging_output['loss'] / logging_output['ntokens'])],
+                        exact=[("lr", self.get_lr()), ("num_updates", self.get_num_updates())])
 
-            progress_bar.set_description("token_loss: {:.4f}; lr: {:.4f}; num_update: {}".format(
-                logging_output['loss'] / logging_output['ntokens'],
-                self.get_lr(),
-                self.get_num_updates()
-            ))
-            # prog.update(i + 1,
-            #             values=[("token_loss", logging_output['loss'] / logging_output['ntokens'])],
-            #             exact=[("lr", self.get_lr()), 
-            #                    ("num_updates", self.get_num_updates())])
+            # progress_bar.set_description("token_loss: {:.4f}; lr: {:.4f}; num_update: {}".format(
+            #     logging_output['loss'] / logging_output['ntokens'],
+            #     self.get_lr(),
+            #     self.get_num_updates()
+            # ))
 
         return logging_outputs
 
@@ -243,4 +246,4 @@ class Trainer(object):
         Args:
             test: instance of class Dataset
         """
-        pass
+        return {"acc": 1.0}

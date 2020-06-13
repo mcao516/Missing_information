@@ -48,14 +48,17 @@ def main(args):
                                          src_dict_name='document', tgt_dict_name='summary')
     args.src_dict, args.tgt_dict = src_dict, tgt_dict
 
-    # build trainer
-    trainer = Trainer(args, logger)
-
     # create datasets
+    logger.info('- loading training set...')
     train = DataLoader(src_dict, args.train_source, args.train_target,
                        max_positions=args.max_positions, no_bos=args.no_bos)
+    logger.info('- loading development set...')
     dev = DataLoader(src_dict, args.dev_source, args.dev_target,
                      max_positions=args.max_positions, no_bos=args.no_bos)
+
+    # build trainer
+    logger.info('- build trainer...')
+    trainer = Trainer(args, logger)
 
     # train model
     trainer.train(train, dev, None)
