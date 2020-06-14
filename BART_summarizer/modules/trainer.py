@@ -48,6 +48,7 @@ class Trainer(object):
 
         # Load BART model
         self._build_model()
+        self.bart = self.bart.to(device=self.device)
         self.model = self.model.to(device=self.device)
 
         if torch.cuda.device_count() > 1 and args.multi_gpu:
@@ -234,10 +235,12 @@ class Trainer(object):
             dev: instance of class DataLoader
 
         """
-        preds = self.predict(dev)
+        hypos = self.predict(dev)
+        hypotheses_batch = [self.bart.decode(x['tokens']) for x in hypos]
+
         print("- PREDICTION:")
-        for i, p in enumerate(preds):
-            print('- #{}: {}'.format(i, p))
+        for i, h in enumerate(hypotheses_batch):
+            print('- #{}: {}'.format(i, h))
 
             if i == 3:
                 break
@@ -251,22 +254,30 @@ class Trainer(object):
         batch_size = self.args.eval_batch_size
         generator = self.task.build_generator([self.bart.model], self.args)
 
-        preds, slines = [], []
-        for sample in tqdm(data.batch_iter(batch_size)):
-            move_to_cuda(sample)
+        # progress_bar = tqdm(train.batch_iter(batch_size))
+        nbatches = (len(data) + batch_size - 1) // batch_size
+        prog = Progbar(target=nbatches)
+
+        preds = []
+        for i, sample in enumerate(data.batch_iter(batch_size)):
+            sample = move_to_cuda(sample)
 
             with torch.no_grad():
-                prefix_tokens=sample['net_input']['src_tokens'].new_zeros((batch_size, 1)).fill_(self.src_dict.bos())
+                prefix_tokens = sample['net_input']['src_tokens'].new_zeros((sample['id'].shape[0], 1))
+                prefix_tokens = prefix_tokens.fill_(self.src_dict.bos()).to(self.device)
+
                 translations = self.task.inference_step(
                     generator,
                     [self.bart.model],
                     sample,
-                    prefix_tokens=prefix_tokens.cuda()
+                    prefix_tokens=prefix_tokens
                 )
 
             # Process top predictions
             hypos = [x[0] for x in translations]
             hypos = [v for _, v in sorted(zip(sample['id'].tolist(), hypos))]
             preds.extend(hypos)
+
+            prog.update(i + 1)
 
         return preds

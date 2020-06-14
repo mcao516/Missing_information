@@ -52,7 +52,7 @@ def main(args):
                        max_positions=args.max_positions, no_bos=args.no_bos)
     logger.info('- loading development set...')
     dev = DataLoader(translation_task.src_dict, args.dev_source, args.dev_target,
-                     max_positions=args.max_positions, no_bos=args.no_bos)
+                     max_positions=args.max_positions, no_bos=False)
 
     # build trainer
     logger.info('- build trainer...')
