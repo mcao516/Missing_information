@@ -1,0 +1,11 @@
+2020-06-13 00:11:49 | INFO | fairseq.train | Namespace(adam_betas='(0.9, 0.999)', adam_eps=1e-08, bart_path='/network/home/caomeng/Downloads/BART/bart.large.xsum', batch_size=48, checkpoint_file='model.pt', clip_norm=0.1, cpu=False, data_name_or_path='/network/home/caomeng/Downloads/BART/bart.large.xsum', dev_source='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/val.bpe.source', dev_target='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/val.bpe.target', end_learning_rate=0.0, force_anneal=None, label_smoothing=0.1, lr=[3e-05], max_epoch=100, max_positions=1024, multi_gpu=True, no_bos=False, power=1.0, reduce=True, save_dir='checkpoints/', seed=0, total_num_update=20000.0, train_source='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/train.bpe.source', train_target='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/train.bpe.target', update_freq=2, warmup_updates=500, weight_decay=0.0)
+2020-06-13 00:11:49 | INFO | fairseq.train | [source] dictionary: 50264 types
+2020-06-13 00:11:49 | INFO | fairseq.train | [target] dictionary: 50264 types
+2020-06-13 00:11:49 | INFO | fairseq.train | - loading training set...
+2020-06-13 00:21:04 | INFO | fairseq.train | - loading development set...
+2020-06-13 00:21:35 | INFO | fairseq.train | - build trainer...
+2020-06-13 00:21:35 | INFO | fairseq.train | - loading BART model from: /network/home/caomeng/Downloads/BART/bart.large.xsum
+2020-06-13 00:21:35 | INFO | fairseq.file_utils | loading archive file /network/home/caomeng/Downloads/BART/bart.large.xsum
+2020-06-13 00:21:35 | INFO | fairseq.file_utils | loading archive file /network/home/caomeng/Downloads/BART/bart.large.xsum
+2020-06-13 00:21:36 | INFO | fairseq.tasks.translation | [document] dictionary: 50264 types
+2020-06-13 00:21:36 | INFO | fairseq.tasks.translation | [summary] dictionary: 50264 types

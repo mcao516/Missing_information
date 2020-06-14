@@ -43,22 +43,20 @@ def main(args):
     # Print args
     logger.info(args)
 
-    # load dictionary
-    src_dict, tgt_dict = load_dictionary(args.data_name_or_path, 
-                                         src_dict_name='document', tgt_dict_name='summary')
-    args.src_dict, args.tgt_dict = src_dict, tgt_dict
+    # create task & load source and taget dictionary
+    translation_task = TranslationTask.setup_task(args)
 
     # create datasets
     logger.info('- loading training set...')
-    train = DataLoader(src_dict, args.train_source, args.train_target,
+    train = DataLoader(translation_task.src_dict, args.train_source, args.train_target,
                        max_positions=args.max_positions, no_bos=args.no_bos)
     logger.info('- loading development set...')
-    dev = DataLoader(src_dict, args.dev_source, args.dev_target,
+    dev = DataLoader(translation_task.src_dict, args.dev_source, args.dev_target,
                      max_positions=args.max_positions, no_bos=args.no_bos)
 
     # build trainer
     logger.info('- build trainer...')
-    trainer = Trainer(args, logger)
+    trainer = Trainer(args, logger, translation_task)
 
     # train model
     trainer.train(train, dev, None)
@@ -66,6 +64,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = init_arg_parser()
+    TranslationTask.add_args(parser)
+
     args = parser.parse_args()
 
     main(args)

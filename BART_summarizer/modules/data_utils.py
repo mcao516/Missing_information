@@ -105,3 +105,24 @@ class DataLoader(object):
 
     def __iter__(self):
         return iter(self.data)
+
+
+class SampleDataLoader(object):
+    def __init__(self, source_path, target_path):
+        """
+        Args:
+            source_path (str): path to string source.
+            target_path (str): path to string target.
+
+        """
+        self.source_path = source_path
+        self.target_path = target_path
+        self.source = self.read_lines(source_path)
+        self.target = self.read_lines(target_path)
+
+    def read_lines(self, file_path):
+        files = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                files.append(line.strip())
+        return files

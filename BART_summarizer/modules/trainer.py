@@ -21,10 +21,11 @@ from modules.model import BARTWrapper
 class Trainer(object):
     """Class for BART model training, evaluation and test."""
 
-    def __init__(self, args, logger):
+    def __init__(self, args, logger, translation_task):
         super(Trainer, self).__init__()
         self.args = args
         self.logger = logger
+        self.task = translation_task
 
         self.optimizer = None
         self.scheduler = None
@@ -39,7 +40,7 @@ class Trainer(object):
             self.device = torch.device('cpu')
 
         # Load source & target dictionary
-        self.src_dict, self.tgt_dict = args.src_dict, args.tgt_dict
+        self.src_dict, self.tgt_dict = self.task.src_dict, self.task.tgt_dict
 
         # build criterion: module for loss computation
         self._build_criterion()
@@ -193,12 +194,6 @@ class Trainer(object):
                         values=[("token_loss", logging_output['loss'] / logging_output['ntokens'])],
                         exact=[("lr", self.get_lr()), ("num_updates", self.get_num_updates())])
 
-            # progress_bar.set_description("token_loss: {:.4f}; lr: {:.4f}; num_update: {}".format(
-            #     logging_output['loss'] / logging_output['ntokens'],
-            #     self.get_lr(),
-            #     self.get_num_updates()
-            # ))
-
         return logging_outputs
 
     def train(self, train, dev, samples=None):
@@ -232,18 +227,46 @@ class Trainer(object):
                     self.logger.info("- early stopping {} epochs without improvement".format(nepoch_no_imprv))
                     break
 
-    def predict_batch(self, context_input, article_input, beam_search=True):
-        """Predict referring expression on a batch of data
-
-           Returns:
-               preds: list of ids in greedy mode, list of list of ids in beam search mode
-        """
-        pass
-
-    def evaluate(self, test, pred_file=None):
-        """Evaluate model on test set
+    def evaluate(self, dev):
+        """Evaluate model on test set.
 
         Args:
-            test: instance of class Dataset
+            dev: instance of class DataLoader
+
         """
+        preds = self.predict(dev)
+        print("- PREDICTION:")
+        for i, p in enumerate(preds):
+            print('- #{}: {}'.format(i, p))
+
+            if i == 3:
+                break
+
         return {"acc": 1.0}
+
+    def predict(self, data):
+        """Generate summary."""
+        self.model.eval()
+
+        batch_size = self.args.eval_batch_size
+        generator = self.task.build_generator([self.bart.model], self.args)
+
+        preds, slines = [], []
+        for sample in tqdm(data.batch_iter(batch_size)):
+            move_to_cuda(sample)
+
+            with torch.no_grad():
+                prefix_tokens=sample['net_input']['src_tokens'].new_zeros((batch_size, 1)).fill_(self.src_dict.bos())
+                translations = self.task.inference_step(
+                    generator,
+                    [self.bart.model],
+                    sample,
+                    prefix_tokens=prefix_tokens.cuda()
+                )
+
+            # Process top predictions
+            hypos = [x[0] for x in translations]
+            hypos = [v for _, v in sorted(zip(sample['id'].tolist(), hypos))]
+            preds.extend(hypos)
+
+        return preds

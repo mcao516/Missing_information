@@ -43,13 +43,13 @@ def init_arg_parser():
     parser.add_argument('--save-dir', metavar='DIR', default='checkpoints/',
                         help='path to save checkpoints')
 
-    parser.add_argument('--train_source', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/train.bpe.source',
+    parser.add_argument('--train_source', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/test_files/val.bpe.source',
                         help='path to training document.')
-    parser.add_argument('--train_target', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/train.bpe.target',
+    parser.add_argument('--train_target', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/test_files/val.bpe.target',
                         help='path to training summary.')
-    parser.add_argument('--dev_source', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/val.bpe.source',
+    parser.add_argument('--dev_source', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/test_files/val.bpe.source',
                         help='path to devlopment document.')
-    parser.add_argument('--dev_target', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/fairseq_files/val.bpe.target',
+    parser.add_argument('--dev_target', metavar='DIR', default='/network/home/caomeng/Downloads/summarization/XSum/test_files/val.bpe.target',
                         help='path to devlopment summary.')
 
     # data preprocessing
@@ -59,7 +59,8 @@ def init_arg_parser():
 
     # training
     parser.add_argument("--multi_gpu", action='store_true', default=True, help="Use multi-gpu for training.")
-    parser.add_argument("--batch_size", default=24, type=int, help="Training batch-size.")
+    parser.add_argument("--batch_size", default=48, type=int, help="Training batch-size.")
+    parser.add_argument("--eval_batch_size", default=128, type=int, help="Evaluation batch-size.")
     parser.add_argument("--cpu", action='store_true', help="Use CPU.")
     parser.add_argument("--label_smoothing", default=0.1, type=float, 
                         help="Label smoothing.")
@@ -87,6 +88,13 @@ def init_arg_parser():
                         help='epsilon for Adam optimizer')
     parser.add_argument('--weight-decay', '--wd', default=0.0, type=float, metavar='WD',
                         help='weight decay')
+    
+    # evaluation
+    parser.add_argument("--beam_size", default=4, type=int, help="Beam size for evaluation.")
+    parser.add_argument('--lenpen', default=2.0, type=float, help='Length penalty')
+    parser.add_argument("--max_len_b", default=120, type=int, help="Max length of generated summary.")
+    parser.add_argument("--min_len", default=20, type=int, help="Min length of generated summary.")
+    parser.add_argument("--no_repeat_ngram_size", default=3, type=int, help="No repeat Ngram size.")
 
     return parser
 
