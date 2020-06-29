@@ -21,11 +21,10 @@ from modules.model import BARTWrapper
 class Trainer(object):
     """Class for BART model training, evaluation and test."""
 
-    def __init__(self, args, logger, translation_task):
+    def __init__(self, args, logger):
         super(Trainer, self).__init__()
         self.args = args
         self.logger = logger
-        self.task = translation_task
 
         self.optimizer = None
         self.scheduler = None
@@ -39,16 +38,20 @@ class Trainer(object):
         else:
             self.device = torch.device('cpu')
 
+        # Load BART model
+        self._load_bart_model()
+        self.bart = self.bart.to(device=self.device)
+
         # Load source & target dictionary
-        self.src_dict, self.tgt_dict = self.task.src_dict, self.task.tgt_dict
+        self.task = self.bart.task
+        self.src_dict, self.tgt_dict = self.bart.task.src_dict, self.bart.task.tgt_dict
 
         # build criterion: module for loss computation
         self._build_criterion()
         self.criterion = self.criterion.to(device=self.device)
 
-        # Load BART model
-        self._build_model()
-        self.bart = self.bart.to(device=self.device)
+        # build model: bart encoder/decoder & criterion
+        self.model = BARTWrapper(self.bart.model, self.criterion)
         self.model = self.model.to(device=self.device)
 
         if torch.cuda.device_count() > 1 and args.multi_gpu:
@@ -59,6 +62,10 @@ class Trainer(object):
 
         self._build_optimizer()
         self._build_scheduler()
+
+    def get_dicts(self):
+        assert self.src_dict is not None and self.tgt_dict is not None
+        return self.src_dict, self.tgt_dict
 
     def get_num_updates(self):
         """Get the number of parameters updates."""
@@ -85,16 +92,12 @@ class Trainer(object):
                                                             padding_idx=self.src_dict.pad(),
                                                             reduce=self.args.reduce)
 
-    def _build_model(self):
+    def _load_bart_model(self):
         """Build BART model."""
-        if self.criterion is None:
-            self._build_criterion()
-
         self.logger.info("- loading BART model from: {}".format(self.args.bart_path))
         self.bart = BARTModel.from_pretrained(self.args.bart_path,
                                               checkpoint_file=self.args.checkpoint_file,
                                               data_name_or_path=self.args.data_name_or_path)
-        self.model = BARTWrapper(self.bart.model, self.criterion)
 
     def _build_optimizer(self):
         params = list(
