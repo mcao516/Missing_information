@@ -2,3 +2,6 @@
 **/__pycache__/
 **/.vscode/
 **/checkpoints/
+**.json
+BART_analysis/cedar_losses/
+BART_analysis/data/
