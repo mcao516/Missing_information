@@ -60,13 +60,24 @@ def main(args):
         return posteriors
     
     posteriors = []
-    for i, (source, target, ents) in tqdm(enumerate(zip(xsum_source, xsum_target, xsum_ents))):
-        if i == 0:
-            print('- first output: {}'.format(get_posterior(source, target, ents['ents'])))
-        posteriors.append(get_posterior(source, target, ents['ents']))
-    
+    with open('{}.txt'.format(args.output_file), 'w') as wf:
+        for i in tqdm(range(args.start_pos, args.end_pos)):
+            source, target = xsum_source[i], xsum_target[i]
+            ents = xsum_ents[i]
+
+            try:
+                posterior_prob = get_posterior(source, target, ents['ents'])
+                
+                wf.write('{}: {}\n'.format(i, posterior_prob))
+                posteriors.append(posterior_prob)
+            except:
+                wf.write('{}: {}\n'.format(i, None))
+                posteriors.append([None])
+
+            wf.flush()
+
     # save posterior values to file
-    with open("posteriors.pkl", "wb") as fp:
+    with open("{}.pkl".format(args.output_file), "wb") as fp:
         pickle.dump(posteriors, fp)
 
 
@@ -79,6 +90,10 @@ if __name__ == "__main__":
     PARSER.add_argument("--bart_path", type=str, help="BART model path.")
     PARSER.add_argument("--checkpoint_file", type=str, default='checkpoint_best.pt', help="checkpoint file name.")
     PARSER.add_argument("--data_name_or_path", type=str, help="BART data bin file.")
+
+    PARSER.add_argument("--start_pos", type=int, default=0, help="Start position.")
+    PARSER.add_argument("--end_pos", type=int, default=203575, help="End position.")
+    PARSER.add_argument("--output_file", type=str, default='posteriors', help="Write posterior.")
 
     ARGS = PARSER.parse_args()
     main(ARGS)
