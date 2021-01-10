@@ -9,3 +9,6 @@ BART_analysis/data/
 **.target
 **.hypo
 **.tokenized
+**.npy
+**.pkl
+BART_analysis/factcc/*
