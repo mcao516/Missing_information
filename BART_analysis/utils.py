@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 
 from fairseq.data.data_utils import collate_tokens
+from sklearn import neighbors
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 def read_lines(file_path):
@@ -265,3 +267,51 @@ def prior_generate(bart_model, masked_sentence):
     masked_output_ids, masked_tokens, masked_token_probs = masked_outputs
     
     return bart_model.decode(masked_output_ids[0])
+
+def plot(taskname, HJ, model_probs, labels, n_neighbors=15):
+    classifier = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors, algorithm='brute')
+
+    larray = np.array(labels)
+    nmodel_probs = np.array(model_probs)
+    pin = nmodel_probs
+    x_mat = np.vstack([pin/np.std(pin), HJ/np.std(HJ) ]).transpose()
+    y_vec = np.array(labels)
+    
+    classifier.fit(x_mat,y_vec)
+    x_min, x_max = x_mat[:,0].min() - .5, x_mat[:, 0].max() + .5
+    y_min, y_max = x_mat[:, 1].min() - .5, x_mat[:, 1].max() + .5
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.2),
+                         np.arange(y_min, y_max, 0.2))
+    Z = classifier.predict_proba(np.c_[xx.ravel(), yy.ravel()])[:, 1]
+    Z = Z.reshape(xx.shape)
+    xx_1, yy_1 = np.meshgrid(np.arange(x_min, x_max, 0.2)*np.std(pin),
+                             np.arange(y_min, y_max, 0.2)*np.std(HJ))
+    cm = plt.cm.RdBu
+    fig, ax = plt.subplots(figsize=(4.5,3.5))
+    ax.contourf(xx_1, yy_1, Z, cmap=cm, alpha=.6)
+    ax.scatter(np.array(pin)[np.nonzero(larray)[0]], np.array(HJ)[np.nonzero(larray)[0]],color='blue',edgecolor='black',label='Model',marker='s')
+    ax.scatter(np.array(pin)[np.nonzero(larray==False)[0]],np.array(HJ)[np.nonzero(larray==False)[0]], color='red',edgecolor='black',label='Human')
+    divider = make_axes_locatable(ax)
+    axHistx = divider.append_axes("top", 0.7, pad=0.0, sharex=ax)
+    axHisty = divider.append_axes("right", 0.7, pad=0.0, sharey=ax)
+    axHistx.xaxis.set_tick_params(labelbottom=False,bottom=False)
+    axHistx.yaxis.set_tick_params(labelleft=False,left=False)
+    axHisty.xaxis.set_tick_params(labelbottom=False,bottom=False)
+    axHisty.yaxis.set_tick_params(labelleft=False,left=False)
+    b_subset = np.nonzero(larray)[0]
+    r_subset = np.nonzero(larray==False)[0]
+    x = np.array(pin)
+    y = np.array(HJ)
+    _ = axHistx.hist(x[b_subset], color='blue', bins=np.arange(x_min, x_max, 0.3)*np.std(pin), alpha=0.7)
+    _ = axHistx.hist(x[r_subset], color='red', bins=np.arange(x_min, x_max, 0.3)*np.std(pin), alpha=0.7)
+    _ = axHisty.hist(y[b_subset], color='blue', bins=np.arange(y_min, y_max, 0.3)*np.std(HJ), orientation='horizontal', alpha=0.7)
+    _ = axHisty.hist(y[r_subset], color='red', bins=np.arange(y_min, y_max, 0.3)*np.std(HJ), orientation='horizontal', alpha=0.7)
+    ax.legend(loc='lower left')
+    ax.set_xlim(np.min(xx_1), np.max(xx_1))
+    ax.set_ylim(np.min(yy_1), np.max(yy_1))
+    ax.set_xlabel('Model log likelihood')
+    ax.set_ylabel('Human Judgement')
+    axHistx.set_title(taskname)
+    plt.tight_layout()
+#     plt.savefig("../figures/" + taskname +'.pdf')
+    plt.show()
