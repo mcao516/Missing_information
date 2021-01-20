@@ -12,3 +12,4 @@ BART_analysis/data/
 **.npy
 **.pkl
 BART_analysis/factcc/*
+**.txt
