@@ -13,3 +13,4 @@ BART_analysis/data/
 **.pkl
 BART_analysis/factcc/*
 **.txt
+Dataset/QA_dataset/*

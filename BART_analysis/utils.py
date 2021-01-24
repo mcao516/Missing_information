@@ -1,3 +1,4 @@
+import json
 import math
 import torch
 import torch.nn as nn
@@ -14,31 +15,13 @@ def read_lines(file_path):
             files.append(line.strip())
     return files
 
-# def get_probability(target, tokens, token_probs):
-#     """Get probability of the given target.
 
-#     Args:
-#         target: Justin Martin
-#         tokens: ['The', ' Archbishop', ' of', ...]
-#         token_probs: [0.50, 0.49, 0.88, ...] 
-#     """
-#     assert len(tokens) == len(token_probs)
-#     for i, t in enumerate(tokens):
-#         if len(t) == 0: continue
-#         prob = 1.0
-#         t = t.strip()
-#         if t in target:
-#             prob = token_probs[i]
-#             if t == target: return prob
-#             for ni, (rt, rp) in enumerate(zip(tokens[i+1:], token_probs[i+1:])):
-#                 if t == target: return prob
-#                 elif len(t) < len(target):
-#                     t += rt
-#                     prob *= rp
-#                 else:
-#                     continue
-#     print('Target ({}) not found!!!'.format(target))
-#     return -1.0
+def read_jsonl(file_path):
+    data = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            data.append(json.loads(line.strip()))
+    return data
 
 
 def decode_sequence(decode_func, decoder, encoder_out, tgt_tokens=None, min_decode_step=10, max_decode_step=60, pad_id=1, eos_id=2, verbose=True):
@@ -267,6 +250,7 @@ def prior_generate(bart_model, masked_sentence):
     masked_output_ids, masked_tokens, masked_token_probs = masked_outputs
     
     return bart_model.decode(masked_output_ids[0])
+
 
 def plot(taskname, HJ, model_probs, labels, n_neighbors=15):
     classifier = neighbors.KNeighborsClassifier(n_neighbors=n_neighbors, algorithm='brute')
