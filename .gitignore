@@ -14,3 +14,4 @@ BART_analysis/data/
 BART_analysis/factcc/*
 **.txt
 Dataset/QA_dataset/*
+jupyter.sh
